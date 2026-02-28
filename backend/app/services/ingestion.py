@@ -149,6 +149,28 @@ class SimpleClassifier:
         return category, round(score, 4), reasoning
 
 
+# ── CLASSIFIER SELECTION ──────────────────────────────────────────────────────
+# By default the heuristic SimpleClassifier is used so the app starts and works
+# without any Azure OpenAI credentials.
+#
+# To switch to the Azure OpenAI classifier:
+#   1. Set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT
+#      in backend/.env  (see .env.example for details).
+#   2. Replace the two lines below with:
+#
+#        from app.services.openai_classifier import OpenAIClassifier
+#        _classifier = OpenAIClassifier()
+#
+#   3. In _process_message() below, change the classify call from:
+#
+#        ai_category, confidence, reasoning = _classifier.classify(...)
+#
+#      to:
+#
+#        ai_category, confidence, reasoning = await _classifier.classify_async(...)
+#
+#   See backend/app/services/openai_classifier.py for full documentation.
+# ─────────────────────────────────────────────────────────────────────────────
 _classifier = SimpleClassifier()
 
 

@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
+    # ── Azure OpenAI ───────────────────────────────────────────────────────
+    # NOTE: The OpenAI classifier is NOT active by default.
+    # See backend/app/services/openai_classifier.py for activation instructions.
+    azure_openai_endpoint: str = ""       # e.g. https://<resource>.openai.azure.com/
+    azure_openai_api_key: str = ""        # API key from Azure OpenAI resource
+    azure_openai_deployment: str = ""     # Deployment name, e.g. "gpt-4o"
+    azure_openai_api_version: str = "2024-02-01"
+
     # ── Derived helpers ────────────────────────────────────────────────────
     @property
     def is_production(self) -> bool:
@@ -66,6 +74,15 @@ class Settings(BaseSettings):
     def graph_api_configured(self) -> bool:
         """True when all three Azure credentials are set."""
         return all([self.azure_tenant_id, self.azure_client_id, self.azure_client_secret])
+
+    @property
+    def openai_configured(self) -> bool:
+        """True when all Azure OpenAI credentials are set."""
+        return all([
+            self.azure_openai_endpoint,
+            self.azure_openai_api_key,
+            self.azure_openai_deployment,
+        ])
 
 
 @lru_cache

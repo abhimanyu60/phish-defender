@@ -28,7 +28,9 @@ An open-source phishing and spam email analysis platform. PhishDefender connects
  │   FastAPI Backend   │
  │  (Python / async)   │
  │                     │
- │  APScheduler job    │──> SimpleClassifier ──> PostgreSQL
+ │  APScheduler job    │──> SimpleClassifier (default)  ──> PostgreSQL
+ │                     │        or
+ │                     │    OpenAIClassifier (optional)
  │  REST API (port 8000│
  └─────────────────────┘
         |
@@ -54,6 +56,7 @@ An open-source phishing and spam email analysis platform. PhishDefender connects
 | Scheduler | APScheduler 3 |
 | HTTP client | httpx (async) |
 | Config | pydantic-settings |
+| AI classifier (optional) | Azure OpenAI (GPT-4o via `openai` SDK) |
 
 ---
 
@@ -158,6 +161,85 @@ MAILBOX_ADDRESSES=shared-mailbox@yourdomain.com
 
 The ingestion job will start automatically when the backend starts and Graph API credentials are present.
 
+### 5. Azure OpenAI Classifier (optional — not active by default)
+
+> **Current status:** The app ships with a heuristic rule-based classifier (`SimpleClassifier`).
+> The Azure OpenAI classifier is fully scaffolded in
+> `backend/app/services/openai_classifier.py` but is **not wired in** by default.
+> Follow the steps below to activate it.
+
+#### Why it's not active by default
+- Requires a paid Azure OpenAI resource.
+- The app must be fully functional without any cloud AI dependency.
+- `SimpleClassifier` works offline and without credentials, which is better for local dev and CI.
+
+#### Step 1 — Create an Azure OpenAI resource
+
+1. Go to [Azure Portal](https://portal.azure.com) > **Azure OpenAI** > **Create**.
+2. Choose your subscription, resource group, region, and a resource name.
+3. Once deployed, open the resource and go to **Keys and Endpoint**. Copy:
+   - **Endpoint** (e.g. `https://my-resource.openai.azure.com/`)
+   - **Key 1**
+4. Go to **Model deployments** > **Deploy model**. Deploy `gpt-4o` (or another chat model). Note the **deployment name** you choose.
+
+#### Step 2 — Add credentials to `backend/.env`
+
+```env
+AZURE_OPENAI_ENDPOINT=https://<your-resource-name>.openai.azure.com/
+AZURE_OPENAI_API_KEY=<your-api-key>
+AZURE_OPENAI_DEPLOYMENT=gpt-4o        # must match your deployment name exactly
+AZURE_OPENAI_API_VERSION=2024-02-01
+```
+
+#### Step 3 — Activate the classifier in `ingestion.py`
+
+Open `backend/app/services/ingestion.py` and find the **CLASSIFIER SELECTION** block (around line 152). Replace:
+
+```python
+_classifier = SimpleClassifier()
+```
+
+with:
+
+```python
+from app.services.openai_classifier import OpenAIClassifier
+_classifier = OpenAIClassifier()
+```
+
+#### Step 4 — Update the classify call to async
+
+In the same file, find `_process_message()` and change:
+
+```python
+ai_category, confidence, reasoning = _classifier.classify(
+    subject=subject,
+    body_text=body_text or "",
+    sender_domain=sender_domain,
+    urls=urls,
+    ips=ips,
+    high_threshold=high_threshold,
+    low_threshold=low_threshold,
+)
+```
+
+to:
+
+```python
+ai_category, confidence, reasoning = await _classifier.classify_async(
+    subject=subject,
+    body_text=body_text or "",
+    sender_domain=sender_domain,
+    urls=urls,
+    ips=ips,
+    high_threshold=high_threshold,
+    low_threshold=low_threshold,
+)
+```
+
+#### Fallback behaviour
+
+If the Azure OpenAI API call fails for any reason (network error, rate limit, invalid response), `OpenAIClassifier.classify_async()` automatically falls back to `SimpleClassifier` so ingestion is never blocked.
+
 ---
 
 ## Configuration
@@ -177,6 +259,10 @@ All backend configuration is in `backend/.env` (copy from `backend/.env.example`
 | `SUSPICIOUS_THRESHOLD` | `0.3` | Score threshold above which an email is classified as suspicious |
 | `SECRET_KEY` | — | App secret key (for future auth use) |
 | `ALLOWED_ORIGINS` | `http://localhost:8080` | CORS allowed origins |
+| `AZURE_OPENAI_ENDPOINT` | — | Azure OpenAI resource endpoint URL (optional) |
+| `AZURE_OPENAI_API_KEY` | — | Azure OpenAI API key (optional) |
+| `AZURE_OPENAI_DEPLOYMENT` | — | Model deployment name, e.g. `gpt-4o` (optional) |
+| `AZURE_OPENAI_API_VERSION` | `2024-02-01` | Azure OpenAI API version (optional) |
 
 ---
 
@@ -226,6 +312,10 @@ phish-defender/
 │   │   ├── schemas/            # Pydantic request/response schemas
 │   │   ├── routers/            # FastAPI route handlers
 │   │   ├── services/           # Business logic (Graph API, ingestion, analytics)
+│   │   │   ├── graph_api.py    # Microsoft Graph API client (MSAL + delta queries)
+│   │   │   ├── ingestion.py    # Email ingestion pipeline + SimpleClassifier
+│   │   │   ├── openai_classifier.py  # Azure OpenAI classifier (optional, see §5)
+│   │   │   └── analytics.py    # DB aggregation queries
 │   │   └── jobs/               # APScheduler background job
 │   ├── alembic/                # Database migrations
 │   ├── requirements.txt

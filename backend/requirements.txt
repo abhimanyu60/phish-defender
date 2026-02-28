@@ -17,6 +17,9 @@ python-dotenv==1.0.1
 msal==1.31.0
 httpx==0.28.1
 
+# Azure OpenAI (optional — install when using the OpenAI classifier)
+openai==1.54.4
+
 # Background scheduling
 apscheduler==3.10.4
 
